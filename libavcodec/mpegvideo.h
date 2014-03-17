@@ -204,11 +204,6 @@ typedef struct Picture{
     int reference;
     int shared;
     int recovered;              ///< Picture at IDR or recovery point + recovery count
-    int invalid_gap;
-
-    int crop;
-    int crop_left;
-    int crop_top;
 } Picture;
 
 /**
@@ -808,7 +803,7 @@ void ff_MPV_common_init_axp(MpegEncContext *s);
 void ff_MPV_common_init_arm(MpegEncContext *s);
 void ff_MPV_common_init_ppc(MpegEncContext *s);
 void ff_clean_intra_table_entries(MpegEncContext *s);
-void ff_draw_horiz_band(AVCodecContext *avctx, Picture *cur, Picture *last,
+void ff_draw_horiz_band(AVCodecContext *avctx, AVFrame *cur, AVFrame *last,
                         int y, int h, int picture_structure, int first_field,
                         int low_delay);
 void ff_mpeg_draw_horiz_band(MpegEncContext *s, int y, int h);
@@ -830,7 +825,9 @@ void ff_MPV_report_decode_progress(MpegEncContext *s);
 int ff_mpeg_update_thread_context(AVCodecContext *dst, const AVCodecContext *src);
 void ff_set_qscale(MpegEncContext * s, int qscale);
 
+/* Error resilience */
 void ff_mpeg_er_frame_start(MpegEncContext *s);
+void ff_mpeg_set_erpic(ERPicture *dst, Picture *src);
 
 int ff_dct_common_init(MpegEncContext *s);
 int ff_dct_encode_init(MpegEncContext *s);
