@@ -30,14 +30,20 @@
 
 #include "libavutil/intreadwrite.h"
 #include "cabac.h"
+#include "dsputil.h"
 #include "error_resilience.h"
 #include "get_bits.h"
-#include "mpegvideo.h"
 #include "h264chroma.h"
 #include "h264dsp.h"
 #include "h264pred.h"
 #include "h264qpel.h"
+#include "mpegutils.h"
+#include "parser.h"
 #include "rectangle.h"
+#include "videodsp.h"
+
+#define H264_MAX_PICTURE_COUNT 36
+#define H264_MAX_THREADS       32
 
 #define MAX_SPS_COUNT          32
 #define MAX_PPS_COUNT         256
@@ -308,7 +314,7 @@ typedef struct H264Picture {
     int pic_id;             /**< pic_num (short -> no wrap version of pic_num,
                                  pic_num & max_pic_num; long -> long_pic_num) */
     int long_ref;           ///< 1->long term reference 0->short term reference
-    int ref_poc[2][2][32];  ///< POCs of the frames used as reference (FIXME need per slice)
+    int ref_poc[2][2][32];  ///< POCs of the frames/fields used as reference (FIXME need per slice)
     int ref_count[2][2];    ///< number of entries in ref_poc         (FIXME need per slice)
     int mbaff;              ///< 1 -> MBAFF frame 0-> not MBAFF
     int field_picture;      ///< whether or not picture was encoded in separate fields
@@ -332,7 +338,6 @@ typedef struct H264Context {
     H264DSPContext h264dsp;
     H264ChromaContext h264chroma;
     H264QpelContext h264qpel;
-    MotionEstContext me;
     ParseContext parse_context;
     GetBitContext gb;
     DSPContext       dsp;
@@ -615,7 +620,7 @@ typedef struct H264Context {
      * @name Members for slice based multithreading
      * @{
      */
-    struct H264Context *thread_context[MAX_THREADS];
+    struct H264Context *thread_context[H264_MAX_THREADS];
 
     /**
      * current slice number, used to initialize slice_num of each thread/context
@@ -741,6 +746,10 @@ typedef struct H264Context {
     AVBufferPool *mb_type_pool;
     AVBufferPool *motion_val_pool;
     AVBufferPool *ref_index_pool;
+
+    /* Motion Estimation */
+    qpel_mc_func (*qpel_put)[16];
+    qpel_mc_func (*qpel_avg)[16];
 } H264Context;
 
 extern const uint8_t ff_h264_chroma_qp[7][QP_MAX_NUM + 1]; ///< One chroma qp table for each possible bit depth (8-14).

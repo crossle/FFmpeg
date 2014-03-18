@@ -1272,6 +1272,7 @@ EXAMPLE_LIST="
     resampling_audio_example
     scaling_video_example
     transcode_aac_example
+    transcoding_example
 "
 
 EXTERNAL_LIBRARY_LIST="
@@ -2087,7 +2088,7 @@ sonic_ls_encoder_select="golomb"
 sp5x_decoder_select="mjpeg_decoder"
 svq1_decoder_select="hpeldsp"
 svq1_encoder_select="aandcttables dsputil hpeldsp mpegvideoenc"
-svq3_decoder_select="h264_decoder hpeldsp mpegvideo"
+svq3_decoder_select="h264_decoder hpeldsp"
 svq3_decoder_suggest="zlib"
 tak_decoder_select="dsputil"
 theora_decoder_select="vp3_decoder"
@@ -2482,6 +2483,7 @@ remuxing_example_deps="avcodec avformat avutil"
 resampling_audio_example_deps="avutil swresample"
 scaling_video_example_deps="avutil swscale"
 transcode_aac_example_deps="avcodec avformat swresample"
+transcoding_example_deps="avfilter avcodec avformat avutil"
 
 # libraries
 avcodec_deps="avutil"

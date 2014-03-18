@@ -38,13 +38,13 @@
 #include "dsputil.h"
 #include "error_resilience.h"
 #include "avcodec.h"
-#include "mpegvideo.h"
 #include "h264.h"
 #include "h264data.h"
 #include "h264chroma.h"
 #include "h264_mvpred.h"
 #include "golomb.h"
 #include "mathops.h"
+#include "mpegutils.h"
 #include "rectangle.h"
 #include "svq3.h"
 #include "thread.h"
@@ -304,7 +304,7 @@ static void release_unused_pictures(H264Context *h, int remove_current)
     int i;
 
     /* release non reference frames */
-    for (i = 0; i < MAX_PICTURE_COUNT; i++) {
+    for (i = 0; i < H264_MAX_PICTURE_COUNT; i++) {
         if (h->DPB[i].f.buf[0] && !h->DPB[i].reference &&
             (remove_current || &h->DPB[i] != h->cur_pic_ptr)) {
             unref_picture(h, &h->DPB[i]);
@@ -386,16 +386,12 @@ static int alloc_scratch_buffers(H264Context *h, int linesize)
     // edge emu needs blocksize + filter length - 1
     // (= 21x21 for  h264)
     h->edge_emu_buffer = av_mallocz(alloc_size * 2 * 21);
-    h->me.scratchpad   = av_mallocz(alloc_size * 2 * 16 * 2);
 
-    if (!h->bipred_scratchpad || !h->edge_emu_buffer || !h->me.scratchpad) {
+    if (!h->bipred_scratchpad || !h->edge_emu_buffer) {
         av_freep(&h->bipred_scratchpad);
         av_freep(&h->edge_emu_buffer);
-        av_freep(&h->me.scratchpad);
         return AVERROR(ENOMEM);
     }
-
-    h->me.temp = h->me.scratchpad;
 
     return 0;
 }
@@ -511,11 +507,11 @@ static int find_unused_picture(H264Context *h)
 {
     int i;
 
-    for (i = 0; i < MAX_PICTURE_COUNT; i++) {
+    for (i = 0; i < H264_MAX_PICTURE_COUNT; i++) {
         if (pic_is_unused(h, &h->DPB[i]))
             break;
     }
-    if (i == MAX_PICTURE_COUNT)
+    if (i == H264_MAX_PICTURE_COUNT)
         return AVERROR_INVALIDDATA;
 
     if (h->DPB[i].needs_realloc) {
@@ -1233,17 +1229,17 @@ static void free_tables(H264Context *h, int free_rbsp)
     av_buffer_pool_uninit(&h->ref_index_pool);
 
     if (free_rbsp && h->DPB) {
-        for (i = 0; i < MAX_PICTURE_COUNT; i++)
+        for (i = 0; i < H264_MAX_PICTURE_COUNT; i++)
             unref_picture(h, &h->DPB[i]);
         av_freep(&h->DPB);
     } else if (h->DPB) {
-        for (i = 0; i < MAX_PICTURE_COUNT; i++)
+        for (i = 0; i < H264_MAX_PICTURE_COUNT; i++)
             h->DPB[i].needs_realloc = 1;
     }
 
     h->cur_pic_ptr = NULL;
 
-    for (i = 0; i < MAX_THREADS; i++) {
+    for (i = 0; i < H264_MAX_THREADS; i++) {
         hx = h->thread_context[i];
         if (!hx)
             continue;
@@ -1252,7 +1248,6 @@ static void free_tables(H264Context *h, int free_rbsp)
         av_freep(&hx->bipred_scratchpad);
         av_freep(&hx->edge_emu_buffer);
         av_freep(&hx->dc_val_base);
-        av_freep(&hx->me.scratchpad);
         av_freep(&hx->er.mb_index2xy);
         av_freep(&hx->er.error_status_table);
         av_freep(&hx->er.er_temp_buffer);
@@ -1388,10 +1383,10 @@ int ff_h264_alloc_tables(H264Context *h)
         init_dequant_tables(h);
 
     if (!h->DPB) {
-        h->DPB = av_mallocz_array(MAX_PICTURE_COUNT, sizeof(*h->DPB));
+        h->DPB = av_mallocz_array(H264_MAX_PICTURE_COUNT, sizeof(*h->DPB));
         if (!h->DPB)
             return AVERROR(ENOMEM);
-        for (i = 0; i < MAX_PICTURE_COUNT; i++)
+        for (i = 0; i < H264_MAX_PICTURE_COUNT; i++)
             av_frame_unref(&h->DPB[i].f);
         av_frame_unref(&h->cur_pic.f);
     }
@@ -1424,7 +1419,6 @@ static void clone_tables(H264Context *dst, H264Context *src, int i)
     dst->cur_pic                = src->cur_pic;
     dst->bipred_scratchpad      = NULL;
     dst->edge_emu_buffer        = NULL;
-    dst->me.scratchpad          = NULL;
     ff_h264_pred_init(&dst->hpc, src->avctx->codec_id, src->sps.bit_depth_luma,
                       src->sps.chroma_format_idc);
 }
@@ -1661,7 +1655,7 @@ av_cold int ff_h264_decode_init(AVCodecContext *avctx)
 #undef REBASE_PICTURE
 #define REBASE_PICTURE(pic, new_ctx, old_ctx)             \
     ((pic && pic >= old_ctx->DPB &&                       \
-      pic < old_ctx->DPB + MAX_PICTURE_COUNT) ?           \
+      pic < old_ctx->DPB + H264_MAX_PICTURE_COUNT) ?           \
      &new_ctx->DPB[pic - old_ctx->DPB] : NULL)
 
 static void copy_picture_range(H264Picture **to, H264Picture **from, int count,
@@ -1673,7 +1667,7 @@ static void copy_picture_range(H264Picture **to, H264Picture **from, int count,
     for (i = 0; i < count; i++) {
         assert((IN_RANGE(from[i], old_base, sizeof(*old_base)) ||
                 IN_RANGE(from[i], old_base->DPB,
-                         sizeof(H264Picture) * MAX_PICTURE_COUNT) ||
+                         sizeof(H264Picture) * H264_MAX_PICTURE_COUNT) ||
                 !from[i]));
         to[i] = REBASE_PICTURE(from[i], new_base, old_base);
     }
@@ -1809,7 +1803,6 @@ static int decode_update_thread_context(AVCodecContext *dst,
         memset(h->pps_buffers, 0, sizeof(h->pps_buffers));
 
         memset(&h->er, 0, sizeof(h->er));
-        memset(&h->me, 0, sizeof(h->me));
         memset(&h->mb, 0, sizeof(h->mb));
         memset(&h->mb_luma_dc, 0, sizeof(h->mb_luma_dc));
         memset(&h->mb_padding, 0, sizeof(h->mb_padding));
@@ -1862,7 +1855,7 @@ static int decode_update_thread_context(AVCodecContext *dst,
     h->droppable            = h1->droppable;
     h->low_delay            = h1->low_delay;
 
-    for (i = 0; h->DPB && i < MAX_PICTURE_COUNT; i++) {
+    for (i = 0; h->DPB && i < H264_MAX_PICTURE_COUNT; i++) {
         unref_picture(h, &h->DPB[i]);
         if (h1->DPB && h1->DPB[i].f.buf[0] &&
             (ret = ref_picture(h, &h->DPB[i], &h1->DPB[i])) < 0)
@@ -2872,7 +2865,7 @@ static void flush_dpb(AVCodecContext *avctx)
     flush_change(h);
 
     if (h->DPB)
-        for (i = 0; i < MAX_PICTURE_COUNT; i++)
+        for (i = 0; i < H264_MAX_PICTURE_COUNT; i++)
             unref_picture(h, &h->DPB[i]);
     h->cur_pic_ptr = NULL;
     unref_picture(h, &h->cur_pic);
@@ -3342,12 +3335,12 @@ static int h264_slice_header_init(H264Context *h, int reinit)
         return ret;
     }
 
-    if (nb_slices > MAX_THREADS || (nb_slices > h->mb_height && h->mb_height)) {
+    if (nb_slices > H264_MAX_THREADS || (nb_slices > h->mb_height && h->mb_height)) {
         int max_slices;
         if (h->mb_height)
-            max_slices = FFMIN(MAX_THREADS, h->mb_height);
+            max_slices = FFMIN(H264_MAX_THREADS, h->mb_height);
         else
-            max_slices = MAX_THREADS;
+            max_slices = H264_MAX_THREADS;
         av_log(h->avctx, AV_LOG_WARNING, "too many threads/slices %d,"
                " reducing to %d\n", nb_slices, max_slices);
         nb_slices = max_slices;
@@ -3499,8 +3492,8 @@ static int decode_slice_header(H264Context *h, H264Context *h0)
     int needs_reinit = 0;
     int field_pic_flag, bottom_field_flag;
 
-    h->me.qpel_put = h->h264qpel.put_h264_qpel_pixels_tab;
-    h->me.qpel_avg = h->h264qpel.avg_h264_qpel_pixels_tab;
+    h->qpel_put = h->h264qpel.put_h264_qpel_pixels_tab;
+    h->qpel_avg = h->h264qpel.avg_h264_qpel_pixels_tab;
 
     first_mb_in_slice = get_ue_golomb_long(&h->gb);
 
