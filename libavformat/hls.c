@@ -256,6 +256,7 @@ static int parse_playlist(HLSContext *c, const char *url,
     const char *ptr;
     int close_in = 0;
     uint8_t *new_url = NULL;
+    int line_len = 0;
 
     if (!in) {
         AVDictionary *opts = NULL;
@@ -289,7 +290,8 @@ static int parse_playlist(HLSContext *c, const char *url,
         pls->finished = 0;
     }
     while (!url_feof(in)) {
-        read_chomp_line(in, line, sizeof(line));
+        line_len = read_chomp_line(in, line, sizeof(line));
+        if (line_len == 0 && in->eof_reached) break;
         if (av_strstart(line, "#EXT-X-STREAM-INF:", &ptr)) {
             struct variant_info info = {{0}};
             is_variant = 1;
